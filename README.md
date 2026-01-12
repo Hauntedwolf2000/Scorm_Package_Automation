@@ -12,11 +12,9 @@
 * [Installation](#installation)
 * [How it works (high level)](#how-it-works-high-level)
 * [GUI & Buttons (explainers)](#gui--buttons-explainers)
-* [Core functions & behavior](#core-functions--behavior)
 * [Typical workflow / examples](#typical-workflow--examples)
 * [Troubleshooting & common errors](#troubleshooting--common-errors)
 * [Development notes](#development-notes)
-* [License & contribution](#license--contribution)
 
 ---
 
@@ -124,21 +122,3 @@ Primary action buttons (7 total):
 * The score parsing uses a simple regex for integers; if `maxpoints` uses floats or different formats, update the regex accordingly.
 * The script is developed as a single `.ps1` file to make deployment easy for end users (no dot-sourcing or modules required).
 
-## Contribution
-
-Contributions, bug reports, and pull requests are welcome. Suggested areas for improvement:
-
-* Auto-detect the Chrome binary across platforms and edge browser.
-* Provide an exportable CSV for bulk reports.
-* Add a preview of `data.js` matches (show lines) before zipping.
-* Add unit-tests around parsing logic.
-
-If you submit a PR, please include a short description, the rationale, and test steps.
-
-## License
-
-Include your preferred license file (`LICENSE`) in the repo root. If you don't have a preference, the [MIT License](https://opensource.org/licenses/MIT) is a permissive option.
-
----
-
-*Generated README for the D‑Forge SCORM GUI — update and tailor as needed before publishing to GitHub.*
