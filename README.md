@@ -1,124 +1,347 @@
-# D‑Forge — SCORM Preparation & Publishing GUI
+# D-Forge SCORM Automation Tool - Technical Documentation
 
-**D‑Forge** is a single-file PowerShell WPF application that automates common SCORM course preparation tasks (patching, compliance checks, score calculation/verification) and zips courses for LMS ingestion. It provides a small GUI so non‑technical users can run checks and publish packages without opening a console.
+## Overview
 
----
+D-Forge is a GUI-based PowerShell automation tool designed to streamline the preparation, validation, and packaging of SCORM (Sharable Content Object Reference Model) e-learning content. The tool automates repetitive tasks involved in making Articulate Storyline exports LMS-ready, with built-in compliance checking and quality assurance features.
 
-## Table of contents
+## What It Does
 
-* [Purpose](#purpose)
-* [Features](#features)
-* [Prerequisites](#prerequisites)
-* [Installation](#installation)
-* [How it works (high level)](#how-it-works-high-level)
-* [GUI & Buttons (explainers)](#gui--buttons-explainers)
-* [Typical workflow / examples](#typical-workflow--examples)
-* [Troubleshooting & common errors](#troubleshooting--common-errors)
-* [Development notes](#development-notes)
+### Core Functions
 
----
+1. **SCORM File Preparation**
+   - Injects required SCORM API tracking code into HTML files
+   - Copies and integrates the `scormAPI.min.js` library
+   - Renames `story.html` to `index.html` for LMS compatibility
+   - Validates folder structure and file compliance
 
-## Purpose
+2. **Quality Assurance**
+   - **Completion Tracking**: Verifies the presence of completion triggers (`type: "action"`) in course data
+   - **Score Validation**: Calculates total possible scores by summing `maxpoints` values from course questions
+   - Performs pre-zip compliance checks to catch issues early
 
-This script was built to speed up and standardize preparation of HTML5 courses (published from authoring tools like Articulate Storyline, Captivate, or custom players) for SCORM-compliant LMS delivery. The GUI removes the need for users to run multiple manual checks and repetitive steps (inserting SCORM fetch code, ensuring scormAPI inclusion, verifying scoring/completion settings, and packaging the course).
+3. **Packaging**
+   - Creates LMS-ready ZIP files using Windows Shell compression
+   - Organizes output files in a `ZippedFiles` subdirectory
+   - Batch processing capability for multiple courses
 
-## Features
+4. **Debugging Support**
+   - Opens courses in Chrome for SCORM API console verification
+   - Provides real-time logging with color-coded messages
+   - Interactive verification dialogs for score confirmation
 
-* WPF GUI (RichTextBox log with colored messages)
-* Hide console on start for a standalone feel
-* **Zip Only** — verify scoring & compliance then zip
-* **Single Publish** — patch, debug (open in Chrome), verify, and zip a single course folder
-* **Bulk Publish** — process all subfolders of a parent folder, debug, bulk verify, and zip
-* **Check Completion (Single/Bulk)** — detect completion triggers and explicit status strings in `data.js`
-* **Check Score (Single/Bulk)** — parse `html5/data/js/data.js` and sum all `maxpoints` values
-* Folder compliance checks: presence of `index_lms.html`, `index.html` (or `story.html`), `scormAPI.min.js`, and script injection checks
-* Safe modifications: inserts script tag when missing, copies `scormAPI.min.js` from the script's directory if available
+### Operation Modes
 
-## Prerequisites
+| Button | Mode | Description |
+|--------|------|-------------|
+| **1. Zip Only** | Quick Package | Validates compliance and zips without modifications |
+| **2. Bulk Publish** | Batch Process | Processes multiple courses in one folder, with bulk debugging and zipping |
+| **3. Single Publish** | Individual Fix | Prepares one course with full fix → debug → verify → zip workflow |
+| **4. Check Completion (Single)** | QA Tool | Verifies completion trigger exists in one course |
+| **5. Check Score (Single)** | QA Tool | Calculates and displays total score for one course |
+| **6. Check Completion (Bulk)** | QA Tool | Checks completion triggers across all subfolders |
+| **7. Check Scores (Bulk)** | QA Tool | Generates score report for all subfolders |
 
-* Windows with PowerShell (Recommended: PowerShell 7+ for best experience, though this script is compatible with Windows PowerShell in most cases)
-* .NET/WPF support (present on standard Windows desktop)
-* Optional: Google Chrome (for the debug workflow). Update `$ChromePath` at the top of the script if Chrome is installed in a different location.
+## How It Works
+
+### Technical Architecture
+
+**Language**: PowerShell 5.1+ with WPF (Windows Presentation Foundation)  
+**GUI Framework**: XAML-based interface  
+**Compression**: Windows Shell.Application COM object  
+**Console Hiding**: Win32 API calls via C# interop
+
+### Development Approach
+
+The tool follows a **defensive programming** pattern with extensive validation:
+
+```
+Input Validation → Compliance Check → Modification → Verification → Output
+```
+
+#### Key Technical Decisions
+
+1. **Console Window Hiding**
+   ```powershell
+   Add-Type -TypeDefinition $consoleHelperCSharp
+   [ConsoleHelpers]::ShowWindow([ConsoleHelpers]::GetConsoleWindow(), 0)
+   ```
+   Uses Win32 API to hide the PowerShell console, presenting only the GUI.
+
+2. **Shell.Application Compression**
+   ```powershell
+   $shell = New-Object -ComObject Shell.Application
+   $zipFile.CopyHere($srcFolder.Items(), 20) # Flags: 4 (no UI) + 16 (yes to all)
+   ```
+   Chosen over `Compress-Archive` for reliability with nested folder structures.
+
+3. **HTML Injection Strategy**
+   - Locates anchor line: `DS.connection.startAssetGroup = startAssetGroup;`
+   - Inserts SCORM event listeners immediately after
+   - Adds `<script>` tag reference before `</body>`
+
+4. **Regex-Based Validation**
+   ```powershell
+   $scoringActionPattern = '"scorings":\s*\[.*?\"type\":\s*\"action\".*?\]'
+   ```
+   Searches `data.js` for completion trigger patterns.
+
+### Processing Workflow
+
+#### Single Publish Flow
+```
+1. Test-ScormScoringCompliance (abort if no completion trigger)
+   ↓
+2. Copy scormAPI.min.js (if missing)
+   ↓
+3. Inject SCORM tracking code into index_lms.html
+   ↓
+4. Add <script> tag for scormAPI.min.js
+   ↓
+5. Rename story.html → index.html
+   ↓
+6. Open in Chrome for debugging
+   ↓
+7. Calculate and verify total score (user confirms)
+   ↓
+8. Compress folder contents to ZIP
+```
+
+#### Bulk Publish Flow
+```
+1. Iterate through all subfolders
+   ↓
+2. Process each folder (same as Single Publish steps 1-5)
+   ↓
+3. Optional: Open ALL modified files in Chrome tabs
+   ↓
+4. Generate bulk score verification report
+   ↓
+5. User confirms scores → ZIP all folders
+```
+
+### Code Injection Details
+
+**Injected JavaScript** (29 lines):
+```javascript
+window.addEventListener("load", function () {
+  setTimeout(function () {
+    window.API.on('LMSInitialize', () => { sendScormData(); });
+    window.API.on('LMSFinish', () => { sendScormData(); });
+    // ... additional event listeners
+  }, 1);
+}, false);
+
+function sendScormData() {
+  try {
+    console.log(JSON.stringify(window.API.cmi));
+    window.postMessage(JSON.stringify(window.API.cmi), '*');
+    window.parent.postMessage(JSON.stringify(window.API.cmi), '*');
+  } catch (_) { }
+}
+```
+
+**Purpose**: Intercepts SCORM API calls and logs CMI (Computer Managed Instruction) data to console for debugging.
 
 ## Installation
 
-1. Save `D-Forge-SCORM-GUI-Fixed.ps1` (or your preferred name) to a folder, for example `D:\work\Script_tools\`.
-2. Place `scormAPI.min.js` beside the script if you want the script to copy it automatically to course folders when missing. Otherwise, the script will require it in each folder.
-3. (Optional) Right-click the `.ps1` file, `Properties` → `Unblock` if Windows blocks downloaded scripts.
-4. Run the script by double-clicking (if you have PowerShell execution configured to allow it) or from a PowerShell session: `powershell -ExecutionPolicy Bypass -File "D:\work\Script_tools\D-Forge-SCORM-GUI-Fixed.ps1"`.
+### Prerequisites
+- Windows 10/11
+- PowerShell 5.1+ (pre-installed on modern Windows)
+- Google Chrome (required for debugging)
+- `scormAPI.min.js` file in the same directory as the script
 
-> The script hides the console window at startup so only the GUI is visible. When the window closes, the PowerShell process exits.
+### Installation Steps
 
-## How it works (high level)
+**Option 1: EXE Installer (Recommended)**
+1. Run the `D-Forge-Setup.exe` file
+2. The installer creates a desktop shortcut
+3. Double-click the shortcut to launch D-Forge
 
-1. The GUI collects a path (either a course folder or a parent folder with many course folders).
-2. Depending on the chosen operation, the script runs one or more checks and actions:
+**Option 2: Manual Setup**
+1. Create a folder (e.g., `C:\D-Forge`)
+2. Place `main.ps1` and `scormAPI.min.js` in the folder
+3. Create a shortcut with target:
+   ```
+   powershell.exe -ExecutionPolicy Bypass -File "C:\D-Forge\main.ps1"
+   ```
+4. Set "Run as administrator" in shortcut properties (recommended)
 
-   * Validate `data.js` scoring configuration (presence of `scorings` with `type:"action"`). This is critical for LMS "completed" status.
-   * Parse `data.js` to calculate the total possible score by summing `maxpoints` fields.
-   * Ensure required files exist and that `index_lms.html` contains an injected hook for SCORM data collection. If the script finds a missing `<script>` tag referencing `scormAPI.min.js`, it inserts it.
-   * Copy `scormAPI.min.js` from the script folder into target folders (if available) when missing.
-   * Optionally open `index_lms.html` files in Chrome so the user can check the console for messages produced by the injected script.
-   * Compress the contents of the course folder into `ZippedFiles\<foldername>.zip` (zips contents, not parent folder).
+### First-Time Configuration
 
-## GUI & Buttons (explainers)
+**Chrome Path Verification**:
+The script expects Chrome at:
+```powershell
+$ChromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+```
 
-* **Target Folder Path**: Enter a single course folder (for Zip Only or Single Publish) or a parent folder containing subfolders (for Bulk operations).
-* **Browse**: Opens a folder picker.
+If Chrome is installed elsewhere, edit line 35 of `main.ps1` to match your installation path.
 
-Primary action buttons (7 total):
+## How to Use
 
-1. **Zip Only** — Performs scoring compliance check and folder compliance check. Prompts to verify calculated score. If verified, zips the course into `ZippedFiles` next to the course.
-2. **Single Publish** — Runs `Process-ScormFolder` (scoring check, copy `scormAPI.min.js`, patch `index_lms.html` safely, rename `story.html` to `index.html` if needed). Optionally opens Chrome for debugging, then verifies score and zips.
-3. **Bulk Publish** — Processes every subfolder of the provided parent folder using the same `Process-ScormFolder` logic, optionally opens all modified `index_lms.html` files in Chrome for manual debug, performs a single bulk score verification dialog listing the calculated totals for all processed folders, and zips approved folders.
-4. **Check Completion (Single)** — Parses `data.js` in the single folder to report whether a `type:"action"` scoring trigger (completed trigger) exists and whether any explicit completion/status strings are present.
-5. **Check Score (Single)** — Calculates and displays the total sum of `maxpoints` values for the selected single folder.
-6. **Check Completion (Bulk)** — Runs the completion check across all first-level subfolders and shows a report.
-7. **Check Scores (Bulk)** — Calculates scores for all subfolders and shows a report.
+### Basic Workflow
 
-* **Exit** — Closes the GUI and exits the script/process.
+1. **Launch D-Forge**
+   - Run from desktop shortcut or execute `main.ps1` directly
 
-## Core functions & behavior (mapping to code)
+2. **Enter Target Path**
+   - **Single operations**: Path to one course folder (e.g., `C:\Courses\Module1`)
+   - **Bulk operations**: Path to parent folder containing multiple course folders
 
-* `Append-ColoredText` — Writes color-coded messages to the RichTextBox log.
-* `Get-ScormTotalScore` — Reads `html5/data/js/data.js` and aggregates all `"maxpoints": <number>` entries.
-* `Get-ScormCompletionInfo` — Looks for `scorings` array entries with `"type":"action"` and common completion/status fields.
-* `Test-ScormScoringCompliance` — Verifies the presence of completion trigger in `data.js` (critical check).
-* `Test-ScormFolderCompliance` — Quick checks for `scormAPI.min.js`, `index_lms.html`, and the injected script presence.
-* `Process-ScormFolder` — High-level orchestration for single-folder fixes and patches.
-* `Compress-FolderContent` — Creates `ZippedFiles\<foldername>.zip` containing the folder contents.
+3. **Select Operation**
+   - Use buttons 1-3 for processing and packaging
+   - Use buttons 4-7 for quality assurance checks
 
-## Typical workflow / examples
+4. **Monitor Progress**
+   - Watch the Process Log for real-time status updates
+   - ✅ Green = success
+   - ❌ Red = error
+   - ℹ️ Blue = informational
 
-**Publish a single folder**
+### Usage Scenarios
 
-1. Enter the course folder in the path box (or click Browse).
-2. Click **2. Single Publish**.
-3. Follow prompts to open Chrome and verify console messages.
-4. Approve the calculated score when prompted to create the zip.
+#### Scenario 1: Quick Packaging (Already Compliant)
+```
+1. Enter path: C:\Courses\Module1
+2. Click "Zip Only"
+3. Verify score when prompted
+4. Find ZIP in C:\Courses\Module1\ZippedFiles\
+```
 
-**Publish many courses at once**
+#### Scenario 2: Fix Non-Compliant Course
+```
+1. Enter path: C:\Courses\Module2
+2. Click "Single Publish"
+3. Review Chrome console output (close tab when done)
+4. Confirm score calculation
+5. Receive packaged ZIP file
+```
 
-1. Enter the parent folder that contains many course subfolders.
-2. Click **3. Bulk Publish**.
-3. Optionally open all modified files in Chrome for debugging.
-4. Review the single bulk verification dialog and approve zipping.
+#### Scenario 3: Process Multiple Courses
+```
+1. Enter path: C:\Courses\ (parent folder)
+2. Click "Bulk Publish"
+3. All subfolders processed automatically
+4. Choose whether to debug all in Chrome
+5. Review bulk score report
+6. Confirm to ZIP all
+```
 
-**Quick checks**
+#### Scenario 4: Pre-Flight QA Check
+```
+1. Enter path: C:\Courses\ (parent folder)
+2. Click "Check Completion (Bulk)" → verify all have triggers
+3. Click "Check Scores (Bulk)" → review score report
+4. Fix any issues in Articulate Storyline
+5. Re-export and run Bulk Publish
+```
 
-* If you only need to verify scoring or completion, use the Check Completion / Check Score buttons for quick readouts without making changes.
+### Expected Folder Structure
 
-## Troubleshooting & common errors
+**Input (Articulate Storyline Export)**:
+```
+CourseFolder/
+├── story.html
+├── index_lms.html
+└── html5/
+    └── data/
+        └── js/
+            └── data.js
+```
 
-* **Parser errors pointing at bracketed text (e.g. `[2] Checking...`)**: This happens when a logging function used earlier was undefined or the script contains malformed tokens. This repository provides a fixed single-file named `D-Forge-SCORM-GUI-Fixed.ps1` that replaces inconsistent logging calls and uses safe string/escaping approaches.
-* **`data.js` not found**: Ensure that the course follows the folder structure `html5/data/js/data.js`. Some publishers use alternate structure — adapt the script or move/point to the correct path.
-* **`scormAPI.min.js` missing**: Put `scormAPI.min.js` beside the script, or ensure it exists in every course folder. The script will attempt to copy it from its own directory if found.
-* **Chrome not found / not opening**: Update the `$ChromePath` variable to fit your installation.
-* **Encoding problems / strange characters**: Save the script using UTF-8 (without BOM is safest) and ensure `Get-Content` reads files as UTF8, which the script attempts to do.
+**Output (After Processing)**:
+```
+CourseFolder/
+├── index.html (renamed from story.html)
+├── index_lms.html (modified)
+├── scormAPI.min.js (copied)
+└── html5/
+    └── data/
+        └── js/
+            └── data.js
 
-## Development notes
+ParentFolder/
+└── ZippedFiles/
+    └── CourseFolder.zip
+```
 
-* The script is intentionally cautious about auto-editing `index_lms.html`. It inserts the script tag if missing and logs missing SCORM fetch code; a more aggressive insertion routine exists in earlier iterations but was simplified to reduce risk of breaking generated player code.
-* The score parsing uses a simple regex for integers; if `maxpoints` uses floats or different formats, update the regex accordingly.
-* The script is developed as a single `.ps1` file to make deployment easy for end users (no dot-sourcing or modules required).
+## Limitations
 
+### Technical Constraints
+
+1. **Windows-Only**
+   - Uses Windows Shell COM objects and Win32 APIs
+   - Not portable to macOS or Linux
+
+2. **Chrome Dependency**
+   - Debugging feature requires Chrome browser
+   - Hardcoded path may need manual adjustment
+
+3. **Articulate Storyline Specific**
+   - Assumes standard Articulate HTML5 export structure
+   - May not work with other authoring tools (Captivate, Lectora, etc.)
+
+4. **No Memory Between Sessions**
+   - Does not track previously processed files
+   - No batch history or undo functionality
+
+5. **Limited Error Recovery**
+   - Single point of failure: if `data.js` is malformed, script aborts
+   - No automatic backup before modifications
+
+### Functional Limitations
+
+1. **Completion Trigger Detection**
+   - Only checks for `"type":"action"` pattern
+   - Cannot validate if trigger is correctly configured in Storyline
+
+2. **Score Calculation**
+   - Sums all `maxpoints` values found
+   - Cannot differentiate between question banks or conditional scoring
+
+3. **ZIP Compression**
+   - Uses synchronous Shell.Application (slower for large files)
+   - No progress bar during compression
+
+4. **Browser Automation**
+   - Opens tabs manually; user must close them
+   - No automated console log capture
+
+5. **Validation Gaps**
+   - Does not verify SCORM manifest (`imsmanifest.xml`)
+   - Cannot test actual LMS compatibility
+   - No validation of SCORM 1.2 vs. 2004 standards
+
+### Known Issues
+
+- **Performance**: Bulk operations with 20+ courses can take 5-10 minutes
+- **UI Freezing**: During compression, GUI may appear unresponsive (expected behavior)
+- **Path Length**: Windows MAX_PATH (260 characters) limitation applies
+
+## Best Practices
+
+1. **Always run "Check Completion (Single/Bulk)" before packaging** to catch missing triggers early
+2. **Verify scores match your Storyline quiz** before final ZIP confirmation
+3. **Test one course with "Single Publish"** before running bulk operations
+4. **Keep backups** of original Storyline exports before processing
+5. **Use consistent folder naming** (no special characters) for cleaner logs
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Chrome not found" error | Edit line 35 to correct Chrome path |
+| Script won't run | Right-click shortcut → "Run as administrator" |
+| Completion check fails | Re-export from Storyline with a "Complete Course" trigger |
+| Score seems wrong | Check if some slides use question banks (may be counted multiple times) |
+| ZIP operation hangs | Wait 2-3 minutes; close other Shell windows if open |
+
+## Version History
+
+**Current Version**: 1.0 (January 2026)
+- Initial release with 7-button interface
+- Added bulk completion/score checking
+- Console window hiding implementation
+
+---
+
+**Developed for**: SCORM content publishers using Articulate Storyline
