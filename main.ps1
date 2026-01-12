@@ -135,21 +135,39 @@ function Compress-FolderContent {
             Show-Error "Folder to zip not found: $PathToZip"
             return $false
         }
-        $parentDir = Split-Path -Path $PathToZip -Parent
-        $folderName = Split-Path -Path $PathToZip -Leaf
+
+        $parentDir        = Split-Path -Path $PathToZip -Parent
+        $folderName       = Split-Path -Path $PathToZip -Leaf
         $zipDestinationFolder = Join-Path -Path $parentDir -ChildPath "ZippedFiles"
         if (-Not (Test-Path $zipDestinationFolder)) { New-Item -ItemType Directory -Path $zipDestinationFolder | Out-Null }
+
         $zipFileName = "$($folderName).zip"
         $zipFilePath = Join-Path -Path $zipDestinationFolder -ChildPath $zipFileName
-        $itemsToZip = Get-ChildItem -Path $PathToZip -Force
-        if ($itemsToZip.Count -eq 0) {
-            Show-Error "No content found inside '$folderName' to zip."
-            return $false
-        }
-        Compress-Archive -Path $itemsToZip.FullName -DestinationPath $zipFilePath -Force
+
+        # ----  NEW ZIP FILE  (0-byte stub) ----
+        # Explorer-style: create an empty .zip first
+        $null = New-Item -ItemType File -Path $zipFilePath -Force
+
+        # ----  SHELL.APPLICATION WAY  ----
+        $shell   = New-Object -ComObject Shell.Application
+        $zipFile = $shell.NameSpace($zipFilePath)
+        $srcFolder = $shell.NameSpace($PathToZip)
+
+        # CopyHere options:  4 = do not show UI,  16 = respond “Yes to All”
+        $copyOptions = 4 + 16
+        $zipFile.CopyHere($srcFolder.Items(), $copyOptions)
+
+        # Wait until the ZIP operation finishes
+        do {
+            Start-Sleep -Milliseconds 500
+            # When the ZIP file reports only 1 item (the stub is replaced by real content) we are done
+            $zipItems = $zipFile.Items().Count
+        } while ($zipItems -eq 0)
+
         Write-Step "Contents inside '$folderName' zipped successfully: $zipFilePath"
         return $true
-    } catch {
+    }
+    catch {
         Show-Error "Zipping failed for $PathToZip. $($_.Exception.Message)"
         return $false
     }
